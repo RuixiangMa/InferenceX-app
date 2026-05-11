@@ -15,6 +15,8 @@ export const VALID_TABS = [
   'calculator',
   'reliability',
   'gpu-specs',
+  'omni',
+  'omni-video',
   'ai-chart',
   'gpu-metrics',
   'submissions',
@@ -52,6 +54,16 @@ export const TAB_META: Record<TabKey, { title: string; description: string }> = 
     title: 'GPU Specifications & Comparison',
     description:
       'Detailed GPU specifications for AI inference. Compare NVIDIA, AMD, and Intel GPUs — memory bandwidth, FLOPS, interconnects, and topology.',
+  },
+  omni: {
+    title: 'Image Generation Benchmarks',
+    description:
+      'Image generation throughput and latency benchmarks across GPUs and frameworks. Compare performance for diffusion and multimodal models.',
+  },
+  'omni-video': {
+    title: 'Video Generation Benchmarks',
+    description:
+      'Video generation throughput and latency benchmarks across GPUs and frameworks. Compare performance for multimodal and diffusion video models.',
   },
   'ai-chart': {
     title: 'AI-Powered Chart Generation',

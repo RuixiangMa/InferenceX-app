@@ -13,6 +13,7 @@ import { resolve } from 'node:path';
 
 import type { BenchmarkRow } from './queries/benchmarks.js';
 import type { EvalRow } from './queries/evaluations.js';
+import type { OmniBenchmarkRow, OmniModalityGroup } from './queries/omni-benchmarks.js';
 import type { ReliabilityRow } from './queries/reliability.js';
 import type {
   AvailabilityRow,
@@ -32,6 +33,7 @@ interface RawConfig {
   model: string;
   precision: string;
   spec_method: string;
+  modality: string;
   disagg: boolean;
   is_multinode: boolean;
   prefill_tp: number;
@@ -207,9 +209,12 @@ function getStore(): Store {
     cl.workflow_run_id = Number(cl.workflow_run_id);
   }
 
-  // Build configs index
+  // Build configs index — default modality to 'text' for pre-migration dumps
   const configs = new Map<number, RawConfig>();
-  for (const c of rawConfigs) configs.set(c.id, c);
+  for (const c of rawConfigs) {
+    if (!c.modality) c.modality = 'text';
+    configs.set(c.id, c);
+  }
 
   // Build latest_workflow_runs (highest run_attempt per github_run_id)
   const latestByGithubId = new Map<number, RawWorkflowRun>();
@@ -330,7 +335,7 @@ export function getLatestBenchmarks(
   const candidates = s.benchmarks.filter((br) => {
     if (br.error !== null && br.error !== undefined) return false;
     const c = s.configs.get(br.config_id);
-    if (!c || !modelKeys.has(c.model)) return false;
+    if (!c || !modelKeys.has(c.model) || c.modality !== 'text') return false;
     if (!s.latestRunsById.has(br.workflow_run_id)) return false;
     if (dateStr) {
       const brDate = toDateString(br.date);
@@ -368,11 +373,10 @@ export function getAllBenchmarksForHistory(
     if (br.error !== null && br.error !== undefined) continue;
     if (br.isl !== isl || br.osl !== osl) continue;
     const c = s.configs.get(br.config_id);
-    if (!c || !modelKeys.has(c.model)) continue;
+    if (!c || !modelKeys.has(c.model) || c.modality !== 'text') continue;
     const wr = s.latestRunsById.get(br.workflow_run_id);
     if (!wr) continue;
 
-    // Strip std_* and mean_* metrics (matches SQL: metrics - '{...}'::text[])
     const filtered: Record<string, number> = {};
     for (const [k, v] of Object.entries(br.metrics)) {
       if (!STRIP_HISTORY_KEYS.has(k)) filtered[k] = v;
@@ -582,4 +586,70 @@ export function getServerLog(benchmarkResultId: number): string | null {
   }
 
   return s.serverLogs.get(logId) ?? null;
+}
+
+export function getLatestOmniBenchmarks(
+  date?: string,
+  group: OmniModalityGroup = 'all',
+): OmniBenchmarkRow[] {
+  const s = getStore();
+  const dateStr = date ? toDateString(date) : undefined;
+  const modalities =
+    group === 'image'
+      ? new Set(['image', 't2i', 'i2i', 'ti2i'])
+      : group === 'video'
+        ? new Set(['t2v', 'i2v', 'ti2v'])
+        : null;
+
+  const candidates = s.benchmarks.filter((br) => {
+    if (br.error !== null && br.error !== undefined) return false;
+    const c = s.configs.get(br.config_id);
+    if (!c || c.modality === 'text') return false;
+    if (modalities && !modalities.has(c.modality)) return false;
+    if (!s.latestRunsById.has(br.workflow_run_id)) return false;
+    if (dateStr) {
+      const brDate = toDateString(br.date);
+      return brDate <= dateStr;
+    }
+    return true;
+  });
+
+  const seen = new Map<string, RawBenchmarkResult>();
+  candidates.sort((a, b) => toDateString(b.date).localeCompare(toDateString(a.date)));
+  for (const br of candidates) {
+    const key = `${br.config_id}:${br.conc}:${br.isl}:${br.osl}`;
+    if (!seen.has(key)) seen.set(key, br);
+  }
+
+  return [...seen.values()].map((br) => {
+    const c = s.configs.get(br.config_id)!;
+    const wr = s.latestRunsById.get(br.workflow_run_id)!;
+    return {
+      hardware: c.hardware,
+      framework: c.framework,
+      model: c.model,
+      precision: c.precision,
+      spec_method: c.spec_method,
+      modality: c.modality,
+      disagg: c.disagg,
+      is_multinode: c.is_multinode,
+      prefill_tp: c.prefill_tp,
+      prefill_ep: c.prefill_ep,
+      prefill_dp_attention: c.prefill_dp_attention,
+      prefill_num_workers: c.prefill_num_workers,
+      decode_tp: c.decode_tp,
+      decode_ep: c.decode_ep,
+      decode_dp_attention: c.decode_dp_attention,
+      decode_num_workers: c.decode_num_workers,
+      num_prefill_gpu: c.num_prefill_gpu,
+      num_decode_gpu: c.num_decode_gpu,
+      isl: br.isl,
+      osl: br.osl,
+      conc: br.conc,
+      image: br.image,
+      metrics: br.metrics,
+      date: toDateString(br.date),
+      run_url: buildRunUrl(wr),
+    };
+  });
 }

@@ -122,6 +122,17 @@ export const HW_REGISTRY: Record<string, HwEntry> = {
     costn: 1.9,
     costr: 2.1,
   },
+  h20: {
+    vendor: 'NVIDIA',
+    arch: 'Hopper',
+    label: 'H20',
+    sort: 9,
+    tdp: 400,
+    power: 1,
+    costh: 0.74,
+    costn: 0.99,
+    costr: 1.1,
+  },
 };
 
 /** Canonical set of GPU key strings used across all packages. */

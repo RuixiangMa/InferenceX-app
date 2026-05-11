@@ -2,6 +2,7 @@ export * from './framework-aliases';
 export * from './github';
 export * from './gpu-keys';
 export * from './metric-keys';
+export * from './modality';
 export * from './precision-keys';
 export * from './models';
 export * from './seo';

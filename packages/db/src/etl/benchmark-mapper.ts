@@ -1,8 +1,3 @@
-/**
- * Benchmark row mapper: raw JSON dict → typed `BenchmarkParams`.
- * Handles both v1 (single tp/ep) and v2 (separate prefill/decode fields).
- */
-
 import type { ConfigParams } from './config-cache';
 import type { SkipTracker } from './skip-tracker';
 import { METRIC_KEYS, PRECISION_KEYS } from '@semianalysisai/inferencex-constants';
@@ -10,6 +5,7 @@ import {
   resolveModelKey,
   hwToGpuKey,
   normalizeFramework,
+  normalizeModality,
   normalizePrecision,
   normalizeSpecMethod,
   parseBool,
@@ -17,16 +13,8 @@ import {
   parseInt2,
 } from './normalizers';
 
-/**
- * Raw artifact field names that are renamed when stored as metrics.
- * All other numeric fields not in `NON_METRIC_KEYS` are stored under their raw name.
- */
 const METRIC_RENAMES: Record<string, string> = {};
 
-/**
- * Raw artifact fields that are config/routing dimensions, not metrics.
- * These are excluded from the metrics JSONB column entirely.
- */
 const NON_METRIC_KEYS = new Set([
   // identity
   'hw',
@@ -57,15 +45,15 @@ const NON_METRIC_KEYS = new Set([
   'decode_num_workers',
   'num_prefill_gpu',
   'num_decode_gpu',
+  // omni — structured objects (not numeric, excluded from metrics)
+  'modality',
+  'workload_family',
+  'output_shape',
+  'workload_params',
+  'throughput_unit',
+  'latency_unit',
 ]);
 
-/**
- * METRIC_KEYS from constants is the canonical set of known metric keys.
- * Any numeric field outside this set and `NON_METRIC_KEYS` is auto-captured
- * but triggers a one-time process warning so new schema fields don't go unnoticed.
- */
-
-// Deduplicate warnings: each unexpected key only prints once per process.
 const _warnedMetricKeys = new Set<string>();
 
 export interface BenchmarkParams {
@@ -77,22 +65,34 @@ export interface BenchmarkParams {
   metrics: Record<string, number>;
 }
 
-/**
- * Map a raw benchmark result dict to typed `BenchmarkParams`.
- *
- * Supports two artifact schemas:
- * - **v1** (pre-2025-12-19): single `tp`/`ep` for both prefill and decode.
- * - **v2** (2025-12-19+): separate `prefill_tp`/`decode_tp` etc. for disaggregated configs.
- *
- * When mapping fails (unknown model, unknown hardware, or missing ISL/OSL/conc),
- * the appropriate skip counter on `tracker` is incremented and `null` is returned.
- *
- * @param row - Raw benchmark dict from the artifact JSON.
- * @param tracker - Shared skip tracker; counters are mutated in place on failure.
- * @param islOslFallback - Optional ISL/OSL to use when the row itself omits them
- *   (e.g. old-format ZIPs where sequence lengths are encoded in the filename).
- * @returns A fully typed `BenchmarkParams` object, or `null` if the row cannot be mapped.
- */
+function deriveOmniModality(row: Record<string, any>): any {
+  const params = row.workload_params;
+  if (params && typeof params === 'object' && params.task) {
+    return params.task;
+  }
+  return row.modality;
+}
+
+function flattenOmniFields(row: Record<string, any>, metrics: Record<string, number>): void {
+  const shape = row.output_shape;
+  if (shape && typeof shape === 'object') {
+    if (typeof shape.width === 'number') metrics['output_width'] = shape.width;
+    if (typeof shape.height === 'number') metrics['output_height'] = shape.height;
+  }
+  const params = row.workload_params;
+  if (params && typeof params === 'object') {
+    if (typeof params.num_inference_steps === 'number') {
+      metrics['num_inference_steps'] = params.num_inference_steps;
+    }
+    if (typeof params.num_frames === 'number') {
+      metrics['num_frames'] = params.num_frames;
+    }
+    if (typeof params.fps === 'number') {
+      metrics['fps'] = params.fps;
+    }
+  }
+}
+
 export function mapBenchmarkRow(
   row: Record<string, any>,
   tracker: SkipTracker,
@@ -114,10 +114,22 @@ export function mapBenchmarkRow(
     return null;
   }
 
-  const isl = parseInt2(row.isl) ?? islOslFallback?.isl;
-  const osl = parseInt2(row.osl) ?? islOslFallback?.osl;
+  const modality = normalizeModality(deriveOmniModality(row));
+  const isOmni = modality !== 'text';
+
+  const rawIsl = parseInt2(row.isl) ?? islOslFallback?.isl;
+  const rawOsl = parseInt2(row.osl) ?? islOslFallback?.osl;
   const conc = parseInt2(row.conc);
-  if (!isl || !osl || !conc) {
+
+  const isl: number = rawIsl ?? 0;
+  const osl: number = rawOsl ?? 0;
+  const concVal: number = conc ?? 0;
+
+  if (!isOmni && (!isl || !osl || !concVal)) {
+    tracker.skips.noIslOsl++;
+    return null;
+  }
+  if (isOmni && !concVal) {
     tracker.skips.noIslOsl++;
     return null;
   }
@@ -135,7 +147,6 @@ export function mapBenchmarkRow(
   let numPrefillGpu: number, numDecodeGpu: number;
 
   if ('prefill_tp' in row) {
-    // v2 schema: full disagg parallelism fields
     prefillTp = parseInt2(row.prefill_tp) ?? 1;
     prefillEp = parseInt2(row.prefill_ep) ?? 1;
     prefillDpAttn = parseBool(row.prefill_dp_attention);
@@ -147,7 +158,6 @@ export function mapBenchmarkRow(
     numPrefillGpu = parseInt2(row.num_prefill_gpu) ?? prefillTp * prefillEp;
     numDecodeGpu = parseInt2(row.num_decode_gpu) ?? decodeTp * decodeEp;
   } else {
-    // v1 schema: single tp/ep, prefill = decode
     const tp = parseInt2(row.tp) ?? 1;
     const ep = parseInt2(row.ep) ?? 1;
     const dpAttn = parseBool(row.dp_attention);
@@ -163,10 +173,6 @@ export function mapBenchmarkRow(
     numDecodeGpu = tp * ep;
   }
 
-  // Auto-capture all numeric fields not reserved for config/routing dimensions.
-  // Fields in METRIC_RENAMES are stored under their canonical name; all others
-  // use the raw key. Any key outside METRIC_KEYS triggers a one-time
-  // warning so new schema additions don't go silently unnoticed.
   const metrics: Record<string, number> = {};
   for (const [rawKey, val] of Object.entries(row)) {
     if (NON_METRIC_KEYS.has(rawKey)) continue;
@@ -182,7 +188,10 @@ export function mapBenchmarkRow(
     }
   }
 
-  // Artifact names encode '/' as '#' to avoid path separators; restore the URI.
+  if (isOmni) {
+    flattenOmniFields(row, metrics);
+  }
+
   const image = row.image ? String(row.image).replaceAll('#', '/') : null;
 
   return {
@@ -192,6 +201,7 @@ export function mapBenchmarkRow(
       model: modelKey,
       precision,
       specMethod,
+      modality,
       disagg,
       isMultinode,
       prefillTp,
@@ -207,7 +217,7 @@ export function mapBenchmarkRow(
     },
     isl,
     osl,
-    conc,
+    conc: concVal,
     image,
     metrics,
   };

@@ -79,6 +79,7 @@ export async function getLatestBenchmarks(
       JOIN configs c ON c.id = br.config_id
       JOIN latest_workflow_runs wr ON wr.id = br.workflow_run_id
       WHERE c.model = ANY(${modelKeys})
+        AND c.modality = 'text'
         AND br.error IS NULL
         AND ${dateFilter}
       ORDER BY br.config_id, br.conc, br.isl, br.osl, br.date DESC
@@ -117,6 +118,7 @@ export async function getLatestBenchmarks(
     JOIN configs c ON c.id = lb.config_id
     JOIN latest_workflow_runs wr ON wr.id = lb.workflow_run_id
     WHERE c.model = ANY(${modelKeys})
+      AND c.modality = 'text'
     ORDER BY lb.config_id, lb.conc, lb.isl, lb.osl, lb.date DESC
   `;
   return rows as unknown as BenchmarkRow[];
@@ -166,6 +168,7 @@ export async function getAllBenchmarksForHistory(
       AND br.error IS NULL
     JOIN latest_workflow_runs wr ON wr.id = br.workflow_run_id
     WHERE c.model = ANY(${modelKeys})
+      AND c.modality = 'text'
     ORDER BY br.date, c.id, br.conc
   `;
   return rows as unknown as BenchmarkRow[];

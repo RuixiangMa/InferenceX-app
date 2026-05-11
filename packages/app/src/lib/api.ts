@@ -32,6 +32,36 @@ export interface BenchmarkRow {
   run_url: string | null;
 }
 
+export interface OmniBenchmarkRow {
+  hardware: string;
+  framework: string;
+  model: string;
+  precision: string;
+  spec_method: string;
+  modality: string;
+  disagg: boolean;
+  is_multinode: boolean;
+  prefill_tp: number;
+  prefill_ep: number;
+  prefill_dp_attention: boolean;
+  prefill_num_workers: number;
+  decode_tp: number;
+  decode_ep: number;
+  decode_dp_attention: boolean;
+  decode_num_workers: number;
+  num_prefill_gpu: number;
+  num_decode_gpu: number;
+  isl: number;
+  osl: number;
+  conc: number;
+  image: string | null;
+  metrics: Record<string, number>;
+  date: string;
+  run_url: string | null;
+}
+
+export type OmniModalityGroup = 'all' | 'image' | 'video';
+
 export interface WorkflowRunRow {
   github_run_id: number;
   name: string;
@@ -120,6 +150,18 @@ export function fetchBenchmarks(
   if (date) params.set('date', date);
   if (exact) params.set('exact', 'true');
   return fetchJson<BenchmarkRow[]>(`/api/v1/benchmarks?${params}`, signal);
+}
+
+export function fetchOmniBenchmarks(
+  date?: string,
+  group: OmniModalityGroup = 'image',
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams();
+  if (date) params.set('date', date);
+  params.set('group', group);
+  const qs = params.toString();
+  return fetchJson<OmniBenchmarkRow[]>(`/api/v1/omni-benchmarks${qs ? `?${qs}` : ''}`, signal);
 }
 
 export function fetchBenchmarkHistory(

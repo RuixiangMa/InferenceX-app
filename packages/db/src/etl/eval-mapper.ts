@@ -271,6 +271,7 @@ function buildEvalConfig(
     model,
     precision,
     specMethod,
+    modality: 'text',
     disagg,
     isMultinode,
     prefillTp,

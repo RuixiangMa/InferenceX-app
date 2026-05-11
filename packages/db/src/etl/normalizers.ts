@@ -7,6 +7,7 @@ import {
   DB_MODEL_TO_DISPLAY,
   FRAMEWORK_ALIASES,
   GPU_KEYS,
+  MODALITY_KEYS,
 } from '@semianalysisai/inferencex-constants';
 
 export { GPU_KEYS };
@@ -170,6 +171,12 @@ export function normalizePrecision(raw: string): string {
 export function normalizeSpecMethod(spec: any): string {
   if (!spec || spec === '') return 'none';
   return String(spec).toLowerCase();
+}
+
+export function normalizeModality(modality: any): string {
+  if (!modality || modality === '') return 'text';
+  const lower = String(modality).toLowerCase();
+  return MODALITY_KEYS.has(lower as any) ? lower : 'text';
 }
 
 /**

@@ -71,6 +71,8 @@ const TAB_LINKS = [
   { href: '/historical', label: 'Historical Trends', testId: 'tab-trigger-historical' },
   { href: '/calculator', label: 'TCO Calculator', testId: 'tab-trigger-calculator' },
   { href: '/gpu-specs', label: 'GPU Specs', testId: 'tab-trigger-gpu-specs' },
+  { href: '/omni', label: 'Image Gen', testId: 'tab-trigger-omni', gated: true },
+  { href: '/omni-video', label: 'Video Gen', testId: 'tab-trigger-omni-video', gated: true },
   { href: '/ai-chart', label: 'AI Chart', testId: 'tab-trigger-ai-chart', gated: true },
   { href: '/gpu-metrics', label: 'PowerX', testId: 'tab-trigger-gpu-metrics', gated: true },
   { href: '/submissions', label: 'Submissions', testId: 'tab-trigger-submissions', gated: true },

@@ -47,6 +47,31 @@ function makeV2Row(overrides: Record<string, any> = {}): Record<string, any> {
   };
 }
 
+function makeOmniRow(overrides: Record<string, any> = {}): Record<string, any> {
+  return {
+    infmax_model_prefix: 'zimage-turbo',
+    hw: 'h200-nv',
+    framework: 'vllm-omni',
+    precision: 'bf16',
+    modality: 'image',
+    isl: 0,
+    osl: 0,
+    conc: 1,
+    tp: 8,
+    ep: 1,
+    dp_attention: false,
+    throughput_per_gpu: 0.0584,
+    latency: 17,
+    output_shape: { width: 1024, height: 1024 },
+    workload_params: {
+      task: 't2i',
+      num_inference_steps: 20,
+      dataset: 'random',
+    },
+    ...overrides,
+  };
+}
+
 describe('mapBenchmarkRow', () => {
   describe('v1 schema', () => {
     it('maps a valid v1 row to BenchmarkParams', () => {
@@ -363,6 +388,56 @@ describe('mapBenchmarkRow', () => {
 
       expect(result!.config.precision).toBe('');
       expect(tracker.unmappedPrecisions.has('')).toBe(true);
+    });
+  });
+
+  describe('omni schema', () => {
+    it('derives modality from workload_params.task when present', () => {
+      const tracker = createSkipTracker();
+      const result = mapBenchmarkRow(makeOmniRow(), tracker);
+
+      expect(result).not.toBeNull();
+      expect(result!.config.modality).toBe('t2i');
+      expect(result!.isl).toBe(0);
+      expect(result!.osl).toBe(0);
+      expect(result!.conc).toBe(1);
+    });
+
+    it('falls back to legacy image modality when task is absent', () => {
+      const tracker = createSkipTracker();
+      const result = mapBenchmarkRow(
+        makeOmniRow({
+          workload_params: { num_inference_steps: 20, dataset: 'random' },
+          modality: 'image',
+        }),
+        tracker,
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.config.modality).toBe('image');
+    });
+
+    it('flattens output shape and workload params into metrics', () => {
+      const tracker = createSkipTracker();
+      const result = mapBenchmarkRow(
+        makeOmniRow({
+          workload_params: {
+            task: 't2v',
+            num_inference_steps: 12,
+            num_frames: 49,
+            fps: 24,
+          },
+        }),
+        tracker,
+      );
+
+      expect(result).not.toBeNull();
+      expect(result!.metrics.output_width).toBe(1024);
+      expect(result!.metrics.output_height).toBe(1024);
+      expect(result!.metrics.num_inference_steps).toBe(12);
+      expect(result!.metrics.num_frames).toBe(49);
+      expect(result!.metrics.fps).toBe(24);
+      expect(result!.config.modality).toBe('t2v');
     });
   });
 

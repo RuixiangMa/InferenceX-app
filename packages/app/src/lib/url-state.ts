@@ -53,6 +53,10 @@ const URL_STATE_KEYS = [
   'r_hc',
   'r_legend',
   'r_active',
+  // Omni
+  'o_hc',
+  'o_legend',
+  'o_active',
 ] as const;
 
 export type UrlStateKey = (typeof URL_STATE_KEYS)[number];
@@ -95,6 +99,9 @@ export const PARAM_DEFAULTS: Record<UrlStateKey, string> = {
   r_hc: '',
   r_legend: '',
   r_active: '',
+  o_hc: '',
+  o_legend: '',
+  o_active: '',
 };
 
 /** Which param prefixes are relevant per tab. */
@@ -102,6 +109,8 @@ const TAB_PARAM_PREFIXES: Record<string, string[]> = {
   inference: ['g_', 'i_'],
   evaluation: ['g_', 'e_'],
   reliability: ['r_'],
+  omni: ['o_'],
+  'omni-video': ['o_'],
 };
 
 /** In-memory store of current param values (kept in sync via writeUrlParams). */
